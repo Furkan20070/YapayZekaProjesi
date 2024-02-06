@@ -33,6 +33,7 @@ private:
 	std::vector<VisionFragment*>* suspectsRef;
 	bool changedColor;
 	vector<VisionFragment*>* counterRef;
+	vector<vector<int>>* mapRef;
 	vector<Scalar>* debugColors;
 	//Fragment'in tekabül ettiği alandaki ortalama rengi hesaplayıp buradaki değişkene atamamızı sağlayan yardımcı fonksiyon.
 	cv::Scalar getAvgColor()
@@ -43,7 +44,7 @@ private:
 	}
 public:
 	//Constructor
-	VisionFragment(int id, glm::ivec2 center, int dimension, cv::Mat image, vector<VisionFragment*>* susRef, vector<Scalar>* debugVal)
+	VisionFragment(int id, glm::ivec2 center, int dimension, cv::Mat image, vector<VisionFragment*>* susRef, vector<vector<int>>* map, vector<Scalar>* debugVal)
 	{
 		VisionFragment::id = id;
 		VisionFragment::center = center;
@@ -52,6 +53,7 @@ public:
 		areaColor = getAvgColor();
 		changedColor = false;
 		suspectsRef = susRef;
+		mapRef = map;
 		debugColors = debugVal;
 	}
 
@@ -73,10 +75,25 @@ public:
 		//algortimanın bu fonksiyon üzerinden geçtiğini teyit et.
 		changedColor = true;
 		colorId = color;
-		debugDraw3();
+		if (mapRef->size() < colorId)
+		{
+			vector<int> temp;
+			mapRef->push_back(temp);
+			mapRef->at(colorId - 1).push_back(center.x); //Minimum X
+			mapRef->at(colorId - 1).push_back(center.x); //Maximum X
+			mapRef->at(colorId - 1).push_back(center.y); //Minimum Y
+			mapRef->at(colorId - 1).push_back(center.y); //Maximum Y
+			mapRef->at(colorId - 1).push_back(1); //bu index'deki fragment sayısı
+		}
+		else
+		{
+			mapRef->at(colorId - 1).at(4)++;
+			compareFragmentPositions(&mapRef->at(colorId - 1));
+		}
+		//debugDraw3();
 		debugDraw2(to_string(colorId), 0.1, 1);
-		//imshow("process", image);
-		//waitKey(0);
+		imshow("process", image);
+		waitKey(1);
 		
 		//komşuları kontrol et
 		for (int i = 0; i < neighbours.size(); i++)
@@ -96,6 +113,28 @@ public:
 					}	
 				}
 			}
+		}
+	}
+
+	//BoundingBox çizimi için kullanacağımız, bir renk kümesi içindeki en sağ, en sol, en alt ve en üst
+	//noktaları belirlemeyi sağlayan yardımcı fonksiyon.
+	void compareFragmentPositions(vector<int>* toApply)
+	{
+		if (center.x < toApply->at(0))
+		{
+			toApply->at(0) = center.x;
+		}
+		if (center.x > toApply->at(1))
+		{
+			toApply->at(1) = center.x;
+		}
+		if (center.y < toApply->at(2))
+		{
+			toApply->at(2) = center.y;
+		}
+		if (center.y > toApply->at(3))
+		{
+			toApply->at(3) = center.y;
 		}
 	}
 
@@ -135,6 +174,11 @@ public:
 		return areaColor;
 	}
 
+	glm::vec2 getCenter()
+	{
+		return center;
+	}
+
 	void setChangedColor(bool val)
 	{
 		changedColor = val;
@@ -151,7 +195,7 @@ public:
 	}
 	// *** GET / SET ***
 
-	//Debug draw fonksiyonları adı üstünde tamamen deBUG amaçlı...
+	//Debug draw fonksiyonları...
 	void debugDraw()
 	{	
 		cv::rectangle(image, cv::Point(center.x - (dimensions / 2), center.y - (dimensions / 2)), cv::Point(center.x + (dimensions / 2), center.y + (dimensions / 2)), areaColor, -1);
