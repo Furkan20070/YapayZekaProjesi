@@ -10,10 +10,12 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "MemoryFragment.h"
 #include <algorithm>
 #include <fstream>
 #include <string>
 #include <cmath>
+#include <conio.h>
 
 class MemoryObject
 {
@@ -26,6 +28,17 @@ private:
 	int height;
 	int width;
 	Mat blackImage;
+	vector<vector<MemoryFragment>> fragments;
+	int colAmount;
+	int rowAmount;
+	vector<int> fillDataY;
+	vector<vector<int>> fillDataX;
+	glm::mat4 projection;
+	glm::vec3 position;
+	glm::vec3 lookDir;
+	glm::vec3 up;
+	glm::mat4 view;
+	glm::mat4 model;
 public:
 	MemoryObject(int dimension, int boxWidth, int boxHeight, std::string file)
 	{
@@ -34,6 +47,14 @@ public:
 		width = boxWidth;
 		height = boxHeight;
 		blackImage = Mat(height, width, CV_8UC3, cv::Scalar(0, 0, 0));
+		colAmount = blackImage.cols / fragmentDimension;
+		rowAmount = blackImage.rows / fragmentDimension;
+		projection = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+		position = glm::vec3(0.0f, 0.0f, -5.0f);
+		lookDir = glm::vec3(0.0f, 0.0f, 1.0f);
+		up = glm::vec3(0.0f, 1.0f, 0.0f);
+		view = glm::lookAt(position, position + lookDir, up);
+		model = glm::mat4(1.0f);
 	}
 
 	void ImportModel()
@@ -118,19 +139,12 @@ public:
 
 	void TestModel()
 	{
-		glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)5 / (float)3, 0.1f, 100.0f);
-		//glm::mat4 projection = glm::ortho(-1.5f, 1.5f, -2.5f, 2.5f, 0.1f, 100.0f);
-		glm::vec3 position(0.0f, 0.0f, -5.0f);
-		glm::vec3 lookDir(0.0f, 0.0f, 1.0f);
-		glm::vec3 up(0.0f, 1.0f, 0.0f);
-		glm::mat4 view = glm::lookAt(position, position + lookDir, up);
-		glm::mat4 model(1.0f);
-		//model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		
+		//blackImage = Mat(height, width, CV_8UC3, cv::Scalar(0, 0, 0));
 		for (int i = 0; i < faces.size(); i++)
 		{
 			int testIndex = faces[i][faces[i].size() - 1] - 1;
-			float dot = glm::dot(normals[testIndex], position);
+			glm::vec3 normalFinal = glm::mat3(glm::transpose(glm::inverse(model))) * normals[testIndex];
+			float dot = glm::dot(normalFinal, position);
 			Point first;
 			Point previous;
 			if (dot > 0)
@@ -143,10 +157,9 @@ public:
 					int x = (ndc[0] + 1) * width * 0.5f;
 					int y = (ndc[1] + 1) * height * 0.5f;
 					Point center(x, y);
-					FindFragmentPos(x, y);
+					FindFragmentPos(x, y, true);
 					if (j != 0)
 					{
-						cout << previous.x << " " << previous.y << endl;
 						MarkEdges(previous, center);
 						if (j == faces[i].size() - 2)
 						{
@@ -158,49 +171,83 @@ public:
 						first = center;
 					}
 					previous = center;
-					imshow("Black Image", blackImage);
-					waitKey(0);
 				}
 
 			}
-			else
+		}
+		CompleteSurface();
+		imshow("Black Image", blackImage);
+		int key = waitKey(5000);
+		switch (key)
+		{
+			case 119:
+				rotateModel(-1.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+				break;
+			case 115:
+				rotateModel(1.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+				break;
+			case 100:
+				rotateModel(1.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+				break;
+			case 97:
+				rotateModel(-1.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+				break;
+			default:
+				break;
+		}
+		//cout << key << endl;
+		fillDataY.clear();
+		fillDataX.clear();
+		for (int i = 0; i < rowAmount; i++)
+		{
+			for (int j = 0; j < colAmount; j++)
 			{
-				std::cout << "pass!" << std::endl;
+				fragments[i][j].clearMark();
 			}
 		}
-
-		/*
-		for (int i = 0; i < vertices.size(); i++)
-		{
-			printVector3(vertices[i]);
-			glm::vec4 vertex(vertices[i], 1.0f);
-			glm::vec4 normalFinal = projection * view * model * vertex;
-			std::cout << "vertex";
-			std::cout << " " << normalFinal[0] << " " << normalFinal[1] << " " << normalFinal[2] << " " << normalFinal[3];
-			std::cout << std::endl;
-			glm::vec3 ndc(normalFinal[0] / normalFinal[3], normalFinal[1] / normalFinal[3], normalFinal[2] / normalFinal[3]);
-			int x = (ndc[0] + 1) * width * 0.5f;
-			int y = (ndc[1] + 1) * height * 0.5f;
-			int centerX = static_cast<int>(x);
-			std::cout << x << std::endl;
-			std::cout << y << std::endl;
-
-			//circle(blackImage, Point(250, 150), 5, Scalar(0, 0, 255), -1);
-			Point center(x, y);
-		    circle(blackImage, center, 5, Scalar(0, 0, 255), -1);
-			imshow("Black Image", blackImage);
-			waitKey(0);
-		}*/
 	}
 
-	void FindFragmentPos(int x, int y)
+	void FindFragmentPos(int x, int y, bool isEdge)
 	{
 		int normalX = x / fragmentDimension;
 		int normalY = y / fragmentDimension;
-		int centerX = (fragmentDimension * (normalX + 1)) - (fragmentDimension / 2);
-		int centerY = (fragmentDimension * (normalY + 1)) - (fragmentDimension / 2);
-		rectangle(blackImage, Point(centerX - fragmentDimension / 2, centerY - fragmentDimension / 2), Point(centerX + fragmentDimension / 2, centerY + fragmentDimension / 2), Scalar(0, 0, 255), -1);
-		
+		if (normalX < 0 || normalX > colAmount - 1 || normalY < 0 || normalY > rowAmount - 1)
+		{
+			return;
+		}
+		fragments[normalY][normalX].Mark(isEdge);
+		auto result = std::find(fillDataY.begin(), fillDataY.end(), normalY);
+		if (result == fillDataY.end())
+		{
+			fillDataY.push_back(normalY);
+			vector<int> temp;
+			temp.push_back(normalX);
+			temp.push_back(normalX);
+			fillDataX.push_back(temp);
+		}
+		else
+		{
+			int index = result - fillDataY.begin();
+			if (normalX < fillDataX[index][0])
+			{
+				fillDataX[index][0] = normalX;
+			}
+			if (normalX > fillDataX[index][1])
+			{
+				fillDataX[index][1] = normalX;
+			}
+		}
+	}
+
+	void CompleteSurface()
+	{
+		for (int i = 0; i < fillDataY.size(); i++)
+		{
+			for (int j = fillDataX[i][0]; j < fillDataX[i][1] + 1; j++)
+			{
+				fragments[fillDataY[i]][j].Mark(fragments[fillDataY[i]][j].GetEdge());
+			}
+		}
 	}
 
 	void MarkEdges(Point start, Point des)
@@ -209,7 +256,7 @@ public:
 		for (int i = 0; i < fragmentDimension * 2; i++)
 		{
 			Point found = PointLerp(start, des, p * (i + 1));
-			FindFragmentPos(found.x, found.y);
+			FindFragmentPos(found.x, found.y, true);
 		}
 	}
 
@@ -227,20 +274,35 @@ public:
 
 	void debugTest()
 	{
-		int colAmount = width / fragmentDimension;
-		int rowAmount = height / fragmentDimension;
 
 		for (int i = 0; i < rowAmount; i++)
 		{
+			vector<MemoryFragment> rowTemp;
 			for (int j = 0; j < colAmount; j++)
 			{
 				int x = (fragmentDimension * (j + 1)) - (fragmentDimension / 2);
 				int y = (fragmentDimension * (i + 1)) - (fragmentDimension / 2);
-				rectangle(blackImage, Point(x - fragmentDimension / 2, y - fragmentDimension / 2), Point(x + fragmentDimension / 2, y + fragmentDimension / 2), Scalar(0, 0, 255), 1);
+				MemoryFragment temp(j, i, Point(x, y), &blackImage, fragmentDimension);
+				rowTemp.push_back(temp);
 			}
+			fragments.push_back(rowTemp);
 		}
-		imshow("Black Image", blackImage);
-		waitKey(0);
 	}
+
+	void rotateModel(float amount, glm::vec3 dir)
+	{
+		model = glm::rotate(model, glm::radians(amount), dir);
+	}
+
+	void debugControl()
+	{
+		int key;
+
+		while (true) 
+		{
+			TestModel();
+		}
+	}
+
 };
 #endif
